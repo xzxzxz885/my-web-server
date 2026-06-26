@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>Прятки: Маска</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { background-color: #121212; color: #e0e0e0; margin: 0; user-select: none; font-family: sans-serif; }
+        .pixelated { image-rendering: pixelated; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1a1a1a; }
+        ::-webkit-scrollbar-thumb { background: #454545; border-radius: 3px; }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
+    </style>
+</head>
+<body class="flex flex-col h-screen">
+
+    <header class="flex items-center justify-between px-4 h-14 bg-[#1a1a1a] border-b border-[#2d2d2d] shrink-0">
+        <div class="flex items-center gap-3">
+            <span class="font-bold text-sm tracking-wide">Прятки: Маска</span>
+            <div class="w-px h-5 bg-[#2d2d2d]"></div>
+            <span class="text-xs text-[#888]">Редактор Лица</span>
+        </div>
+        <button id="btn-upload" class="px-4 py-2 bg-[#4ade80] text-[#121212] text-xs font-bold rounded-md hover:bg-[#22c55e] transition-colors cursor-pointer">
+            ПОЛУЧИТЬ ССЫЛКУ
+        </button>
+    </header>
+
+    <main class="flex flex-1 overflow-hidden flex-row">
+        
+        <div class="w-14 bg-[#1a1a1a] border-r border-[#2d2d2d] flex flex-col items-center py-4 gap-3 shrink-0">
+            <button class="w-10 h-10 rounded-md flex items-center justify-center bg-[#4ade80] text-[#121212] cursor-default" title="Кисть">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg>
+            </button>
+            <button id="btn-fill" class="w-10 h-10 rounded-md flex items-center justify-center bg-[#2d2d2d] text-[#a0a0a0] hover:bg-[#3d3d3d] hover:text-white transition-colors cursor-pointer" title="Залить всё лицо">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 11l-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"></path><path d="M5 2l5 5"></path><path d="M2 13h15"></path><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z"></path></svg>
+            </button>
+        </div>
+
+        <div class="flex-1 bg-[#151515] flex items-center justify-center overflow-auto">
+            <div class="relative shadow-2xl border-2 border-white bg-[#222]" style="width: 384px; height: 384px;">
+                <canvas id="main-canvas" width="8" height="8" class="pixelated block cursor-crosshair absolute inset-0 w-full h-full"></canvas>
+                <div class="absolute inset-0 pointer-events-none opacity-20" style="background-image: linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px); background-size: 48px 48px;"></div>
+            </div>
+        </div>
+
+        <div class="w-[280px] bg-[#1a1a1a] border-l border-[#2d2d2d] flex flex-col p-5 gap-4 shrink-0 overflow-y-auto">
+            <div class="text-[11px] font-bold uppercase tracking-widest text-[#888]">Выбор цвета</div>
+            <input type="color" id="color-input" value="#eab308" class="w-full h-20 bg-transparent cursor-pointer rounded-md border-2 border-[#4ade80]">
+            
+            <div class="flex items-center gap-2 border-b border-[#2d2d2d] pb-4">
+                <div class="w-10 h-10 rounded border border-[#444] bg-[#eab308] shrink-0" id="color-preview"></div>
+                <input type="text" id="hex-input" value="#eab308" class="flex-1 w-full bg-[#252525] border border-[#444] rounded px-2 py-2 text-sm font-mono text-white outline-none focus:border-[#4ade80]">
+            </div>
+
+            <div class="text-[11px] font-bold uppercase tracking-widest text-[#888]">Быстрые цвета</div>
+            <div class="grid grid-cols-4 gap-2" id="quick-colors"></div>
+        </div>
+    </main>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            try {
+                const supabase = window.supabase.createClient('https://rgnjlflnuvydgpvuacmx.supabase.co', 'sb_publishable_iMLHWaC3snvrNuvrfQZ2jQ_QC0luQek');
+
+                const BASE_SKIN_URL = 'https://rgnjlflnuvydgpvuacmx.supabase.co/storage/v1/object/public/skins/2dc65bc94b53c809.png';
+                const baseImg = new Image();
+                baseImg.crossOrigin = "anonymous";
+                baseImg.src = BASE_SKIN_URL;
+
+                const canvas = document.getElementById("main-canvas");
+                const ctx = canvas.getContext("2d");
+                const scale = 384 / 8; 
+
+                const utkaB64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED56LAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAB7SURBVChTYwCC/0gYpAgpALMZgYwFQIwXwBSAFIEwI4gN4gIpxmAmAtWwAIgN4gIpxmAmAtWwAIgN4gIpxmAmAtWwAIgN4gIpxmAmAtWwAIgN4gIpxmAmAtWwAIgN4gIpxmAmAtWwAFIDwYxgNogLpBiDmQhUwwIgNghmBABZ3S/939w6eQAAAABJRU5ErkJggg==";
+                const utka = new Image();
+                utka.src = utkaB64;
+                utka.onload = () => ctx.drawImage(utka, 0, 0);
+
+                const colorInput = document.getElementById("color-input");
+                const hexInput = document.getElementById("hex-input");
+                const colorPreview = document.getElementById("color-preview");
+
+                function setColor(c) {
+                    colorInput.value = c;
+                    hexInput.value = c;
+                    colorPreview.style.backgroundColor = c;
+                }
+
+                colorInput.addEventListener("input", e => setColor(e.target.value));
+                hexInput.addEventListener("input", e => {
+                    if (/^#[0-9A-F]{6}$/i.test(e.target.value)) setColor(e.target.value);
+                });
+
+                const quickColors = ['#ffffff', '#eab308', '#f97316', '#ef4444', '#22c55e', '#3b82f6', '#9333ea', '#000000'];
+                const quickColorsContainer = document.getElementById("quick-colors");
+                quickColors.forEach(c => {
+                    const btn = document.createElement("button");
+                    btn.className = "w-full aspect-square rounded border border-[#444] cursor-pointer hover:border-white transition-colors";
+                    btn.style.backgroundColor = c;
+                    btn.addEventListener("click", () => setColor(c));
+                    quickColorsContainer.appendChild(btn);
+                });
+
+                const btnFill = document.getElementById("btn-fill");
+                btnFill.addEventListener("click", () => {
+                    ctx.fillStyle = colorInput.value;
+                    ctx.fillRect(0, 0, 8, 8);
+                });
+
+                let isDrawing = false;
+                function draw(e) {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = Math.floor((e.clientX - rect.left) / scale);
+                    const y = Math.floor((e.clientY - rect.top) / scale);
+
+                    if (x >= 0 && x < 8 && y >= 0 && y < 8) {
+                        ctx.fillStyle = colorInput.value;
+                        ctx.fillRect(x, y, 1, 1);
+                    }
+                }
+
+                canvas.addEventListener("mousedown", e => { isDrawing = true; draw(e); });
+                window.addEventListener("mouseup", () => isDrawing = false);
+                canvas.addEventListener("mousemove", e => { if (isDrawing) draw(e); });
+
+                const btnUpload = document.getElementById("btn-upload");
+                
+                btnUpload.addEventListener("click", () => {
+                    if (!baseImg.complete || baseImg.naturalWidth === 0) {
+                        alert("Базовый скин Стива еще не загрузился или ссылка неверная.");
+                        return;
+                    }
+
+                    const origText = btnUpload.innerText;
+                    btnUpload.innerText = "ЗАГРУЗКА В ОБЛАКО...";
+                    btnUpload.classList.replace("bg-[#4ade80]", "bg-yellow-400");
+
+                    const fullCanvas = document.createElement("canvas");
+                    fullCanvas.width = 64;
+                    fullCanvas.height = 64;
+                    const fullCtx = fullCanvas.getContext("2d");
+
+                    fullCtx.drawImage(baseImg, 0, 0);       
+                    
+                    const imgData = fullCtx.getImageData(0, 0, 64, 64);
+                    const data = imgData.data;
+                    
+                    if (data[3] === 255) { 
+                        const bgR = data[0], bgG = data[1], bgB = data[2];
+                        for (let i = 0; i < data.length; i += 4) {
+                            if (data[i] === bgR && data[i+1] === bgG && data[i+2] === bgB) {
+                                data[i+3] = 0;
+                            }
+                        }
+                        fullCtx.putImageData(imgData, 0, 0);
+                    }
+
+                    fullCtx.clearRect(8, 8, 8, 8);
+                    fullCtx.fillStyle = "#000000";
+                    fullCtx.fillRect(8, 8, 8, 8);
+
+                    fullCtx.clearRect(40, 8, 8, 8);         
+                    
+                    fullCtx.drawImage(canvas, 8, 8);        
+
+                    fullCanvas.toBlob(async (blob) => {
+                        try {
+                            const nazvanie = 'skin-' + Date.now() + '.png';
+                            
+                            const { error } = await supabase.storage.from('skins').upload(nazvanie, blob, { contentType: 'image/png' });
+                            if (error) throw error;
+                            
+                            const { data: pubData } = supabase.storage.from('skins').getPublicUrl(nazvanie);
+                            navigator.clipboard.writeText(pubData.publicUrl);
+                            
+                            btnUpload.innerText = "СКОПИРОВАНО!";
+                            btnUpload.classList.replace("bg-yellow-400", "bg-[#4ade80]");
+                            setTimeout(() => {
+                                btnUpload.innerText = origText;
+                            }, 3000);
+                        } catch (err) {
+                            alert("Ошибка загрузки: " + err.message);
+                            btnUpload.innerText = origText;
+                            btnUpload.classList.replace("bg-yellow-400", "bg-[#4ade80]");
+                        }
+                    }, 'image/png');
+                });
+
+            } catch (err) {
+                alert("Критическая ошибка запуска: " + err.message);
+            }
+        });
+    </script>
+</body>
+</html>
